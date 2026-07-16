@@ -4,12 +4,4 @@ export class InMemoryEmployeeRepository extends InMemoryRepository {
         return [];
     }
 }
-export class EmployeeGeneratorService {
-    repository;
-    constructor(repository) {
-        this.repository = repository;
-    }
-    async generate(request) {
-        throw new Error('EmployeeGeneratorService implementation is pending');
-    }
-}
+export { EmployeeGeneratorService } from './employee-generator.service.js';

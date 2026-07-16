@@ -4,12 +4,12 @@ export interface N8nConfig {
   timeoutMs: number;
 }
 
-export function getN8nConfig(): N8nConfig {
+export function getN8nConfig(): N8nConfig | null {
   const baseUrl = process.env.N8N_BASE_URL?.trim();
   const apiKey = process.env.N8N_API_KEY?.trim();
 
   if (!baseUrl || !apiKey) {
-    throw new Error('N8N_BASE_URL and N8N_API_KEY are required');
+    return null;
   }
 
   return {
@@ -19,6 +19,6 @@ export function getN8nConfig(): N8nConfig {
   };
 }
 
-export function validateN8nConfig(): N8nConfig {
+export function validateN8nConfig(): N8nConfig | null {
   return getN8nConfig();
 }

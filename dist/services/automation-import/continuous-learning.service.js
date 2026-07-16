@@ -6,17 +6,21 @@ import { TemplateSearchService } from '../../ai-factory/workflow-generator/templ
 import { WorkflowAnalyzerService } from '../../ai-factory/workflow-analyzer/workflow-analyzer.service.js';
 import { InMemoryWorkflowAnalysisRepository } from '../../ai-factory/workflow-analyzer/workflow-analyzer.repository.js';
 import { InMemoryWorkflowGeneratorRepository } from '../../ai-factory/workflow-generator/workflow-generator.repository.js';
+import { TemplateEnricherService } from './template-enricher.service.js';
 export class ContinuousLearningService {
     templateLibraryRoot;
     knownFiles = new Map();
     indexer;
     templateSearch;
     analyzerService;
+    enricher;
+    enrichedCache = new Map();
     constructor(templateLibraryRoot = path.resolve(process.cwd(), 'template-library', 'source')) {
         this.templateLibraryRoot = templateLibraryRoot;
         this.analyzerService = new WorkflowAnalyzerService(new InMemoryWorkflowAnalysisRepository());
         this.indexer = new TemplateIndexerService(this.analyzerService);
         this.templateSearch = new TemplateSearchService(new InMemoryWorkflowGeneratorRepository(), this.analyzerService);
+        this.enricher = new TemplateEnricherService();
     }
     async scanForChanges() {
         const startedAt = Date.now();
@@ -33,6 +37,7 @@ export class ContinuousLearningService {
                 updatedFiles: 0,
                 errors: ['Template library root does not exist'],
                 indexedRecords: 0,
+                enrichedRecords: 0,
                 duration: 0,
             };
         }
@@ -64,11 +69,26 @@ export class ContinuousLearningService {
             }
         }
         let indexedRecords = 0;
+        let enrichedRecords = 0;
         if (newFiles > 0 || updatedFiles > 0) {
             try {
                 const records = await this.indexer.scanAndIndexAll();
                 indexedRecords = records.length;
                 await this.templateSearch.refreshIndex();
+                for (const filePath of currentHashes.keys()) {
+                    if (this.knownFiles.get(filePath) === currentHashes.get(filePath))
+                        continue;
+                    try {
+                        const enriched = await this.enricher.enrichTemplate(filePath);
+                        if (enriched) {
+                            this.enrichedCache.set(filePath, enriched);
+                            enrichedRecords++;
+                        }
+                    }
+                    catch {
+                        // skip enrichment failures per file
+                    }
+                }
             }
             catch (error) {
                 errors.push(`Indexing failed: ${error instanceof Error ? error.message : 'Unknown'}`);
@@ -80,6 +100,7 @@ export class ContinuousLearningService {
             updatedFiles,
             errors,
             indexedRecords,
+            enrichedRecords,
             duration: Date.now() - startedAt,
         };
     }

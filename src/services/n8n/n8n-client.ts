@@ -2,7 +2,7 @@ import { getN8nConfig } from './n8n.config.js';
 import type { N8nConfig, N8nCredentialPayload, N8nExecutionResult, N8nHealth, N8nWorkflowPayload, N8nWorkflowResult } from './n8n.types.js';
 
 export class N8nClient {
-  constructor(private readonly config: N8nConfig = getN8nConfig()) {}
+  constructor(private readonly config: N8nConfig | null = getN8nConfig()) {}
 
   async deployWorkflow(payload: N8nWorkflowPayload): Promise<N8nWorkflowResult> {
     return this.request<N8nWorkflowResult>('/workflows', 'POST', payload);
@@ -39,6 +39,13 @@ export class N8nClient {
   }
 
   async health(): Promise<N8nHealth> {
+    if (!this.config) {
+      return {
+        status: 'degraded',
+        details: { message: 'n8n not configured' }
+      };
+    }
+
     try {
       const response = await fetch(`${this.config.baseUrl}/healthz`, {
         headers: {
@@ -60,6 +67,10 @@ export class N8nClient {
   }
 
   private async request<T>(path: string, method: string, body?: unknown): Promise<T> {
+    if (!this.config) {
+      throw new Error('n8n is not configured');
+    }
+
     const response = await fetch(`${this.config.baseUrl}${path}`, {
       method,
       headers: {

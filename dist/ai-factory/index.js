@@ -9,4 +9,5 @@ export * from './qa-engine/index.js';
 export * from './deployment-manager/index.js';
 export * from './workflow-analyzer/index.js';
 export * from './marketplace-publisher/index.js';
+export * from './integration-manager/index.js';
 export * from './shared/index.js';

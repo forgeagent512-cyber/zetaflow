@@ -31,6 +31,12 @@ export class N8nClient {
         return { success: true };
     }
     async health() {
+        if (!this.config) {
+            return {
+                status: 'degraded',
+                details: { message: 'n8n not configured' }
+            };
+        }
         try {
             const response = await fetch(`${this.config.baseUrl}/healthz`, {
                 headers: {
@@ -51,6 +57,9 @@ export class N8nClient {
         }
     }
     async request(path, method, body) {
+        if (!this.config) {
+            throw new Error('n8n is not configured');
+        }
         const response = await fetch(`${this.config.baseUrl}${path}`, {
             method,
             headers: {

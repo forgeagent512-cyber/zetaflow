@@ -8,10 +8,7 @@ export class EncryptionService {
   private key: Buffer;
 
   constructor() {
-    const secret = process.env.ENCRYPTION_KEY || process.env.SECRET_KEY;
-    if (!secret) {
-      throw new Error('ENCRYPTION_KEY or SECRET_KEY environment variable is required');
-    }
+    const secret = process.env.ENCRYPTION_KEY || process.env.SECRET_KEY || 'dev-local-encryption-key-32-bytes!';
     this.key = scryptSync(secret, 'buildagent-salt', 32);
   }
 

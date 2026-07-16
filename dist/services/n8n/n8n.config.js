@@ -2,7 +2,7 @@ export function getN8nConfig() {
     const baseUrl = process.env.N8N_BASE_URL?.trim();
     const apiKey = process.env.N8N_API_KEY?.trim();
     if (!baseUrl || !apiKey) {
-        throw new Error('N8N_BASE_URL and N8N_API_KEY are required');
+        return null;
     }
     return {
         baseUrl: baseUrl.replace(/\/$/, ''),
