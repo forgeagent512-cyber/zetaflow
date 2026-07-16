@@ -1,4 +1,5 @@
-.next/  
-node_modules/  
-*.log  
-.env* 
+.next/
+node_modules/
+dist/
+*.log
+.env*
