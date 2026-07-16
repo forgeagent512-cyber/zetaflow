@@ -36,7 +36,7 @@ export const dashboardNavigation: NavigationItem[] = [
 export const adminNavigation: NavigationItem[] = [
   // Platform Management
   { label: "Admin Dashboard", href: "/dashboard/admin", icon: "layout-dashboard" },
-  { label: "Organizations", href: "/dashboard/admin/organizations", icon: "building" },
+  { label: "Organizations", href: "/dashboard/admin/organization-manager", icon: "building" },
   { label: "Client Management", href: "/dashboard/admin/client-management", icon: "users" },
   { label: "Deployment Manager", href: "/dashboard/admin/deployment-manager", icon: "rocket" },
   { label: "Provisioning", href: "/dashboard/admin/provisioning", icon: "zap" },
@@ -62,7 +62,7 @@ export const adminNavigation: NavigationItem[] = [
   { label: "Credential Vault", href: "/dashboard/admin/credential-vault", icon: "lock" },
   { label: "API Keys", href: "/dashboard/admin/api-keys", icon: "key" },
   { label: "Audit Logs", href: "/dashboard/admin/audit-logs", icon: "clipboard-list" },
-  { label: "Backups", href: "/dashboard/admin/backups", icon: "hard-drive" },
+  { label: "Backups", href: "/dashboard/admin/backup-manager", icon: "hard-drive" },
   { label: "Notifications", href: "/dashboard/admin/notifications", icon: "bell" },
   // Enterprise
   { label: "License Manager", href: "/dashboard/admin/license-manager", icon: "key" },

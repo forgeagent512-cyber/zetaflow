@@ -1,10 +1,18 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
+import { createClient } from '@supabase/supabase-js';
 import { GEOEngine } from '../../services/seo/geo-engine.js';
 import { authenticate } from '../../middleware/auth.middleware.js';
 
 const router = Router();
 const geoEngine = new GEOEngine();
+
+function getSupabase() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_ANON_KEY;
+  if (!url || !key) throw new Error('Supabase configuration missing');
+  return createClient(url, key, { auth: { persistSession: false } });
+}
 
 router.post('/entities', authenticate, async (req: Request, res: Response) => {
   try {
@@ -16,10 +24,7 @@ router.post('/entities', authenticate, async (req: Request, res: Response) => {
       });
       res.json({ success: true, data: entity });
     } else if (req.body?.action === 'list') {
-      const { createClient } = await import('@supabase/supabase-js');
-      const url = process.env.SUPABASE_URL;
-      const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_ANON_KEY;
-      const supabase = createClient(url!, key!, { auth: { persistSession: false } });
+      const supabase = getSupabase();
       const { data } = await supabase.from('geo_entities').select('*').eq('organization_id', orgId);
       res.json({ success: true, data: data ?? [] });
     } else {

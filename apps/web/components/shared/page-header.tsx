@@ -11,6 +11,7 @@ interface PageHeaderProps {
   description?: string;
   breadcrumbs?: BreadcrumbItem[];
   actions?: React.ReactNode;
+  children?: React.ReactNode;
   className?: string;
 }
 
@@ -19,6 +20,7 @@ export function PageHeader({
   description,
   breadcrumbs,
   actions,
+  children,
   className,
 }: PageHeaderProps) {
   return (
@@ -32,6 +34,7 @@ export function PageHeader({
           )}
         </div>
         {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
+        {children && <div className="flex items-center gap-2 shrink-0">{children}</div>}
       </div>
     </div>
   );
