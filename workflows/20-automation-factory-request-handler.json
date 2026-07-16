@@ -1,0 +1,225 @@
+{
+  "name": "Workflow 20 - Automation Factory (Client Request Handler)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "automation-request",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "20a1a1a1-0001-0001-0001-000000000001",
+      "name": "Website: New Automation Request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-2000, 300],
+      "webhookId": "automation-request",
+      "notes": "Tumhari website ka form/chat isi URL par POST karega. Body: { client_name, client_email, client_phone, requirement_text }"
+    },
+    {
+      "parameters": {
+        "url": "https://api.openai.com/v1/embeddings",
+        "method": "POST",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"model\": \"text-embedding-3-small\", \"input\": $json.body.requirement_text } }}",
+        "options": {}
+      },
+      "id": "20a1a1a1-0002-0002-0002-000000000002",
+      "name": "Generate Embedding",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-1760, 300],
+      "credentials": {
+        "openAiApi": { "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID", "name": "OpenAI account" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM match_templates('{{ JSON.stringify($json.data[0].embedding) }}'::vector, 0.85, 3);",
+        "options": {}
+      },
+      "id": "20a1a1a1-0003-0003-0003-000000000003",
+      "name": "Search for Matching Template",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-1520, 300],
+      "credentials": {
+        "postgres": { "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID", "name": "Supabase Postgres" }
+      },
+      "notes": "Supabase ka connection string 'Postgres' credential type se hi use hota hai n8n mein (Project Settings > Database mein milega)."
+    },
+    {
+      "parameters": {
+        "jsCode": "const matches = $input.all().map(i => i.json);\nconst request = $('Website: New Automation Request').item.json.body;\nconst embedding = $('Generate Embedding').item.json.data[0].embedding;\n\nconst hasMatch = matches.length > 0;\n\nreturn {\n  json: {\n    ...request,\n    embedding: embedding,\n    has_match: hasMatch,\n    best_match: hasMatch ? matches[0] : null\n  }\n};"
+      },
+      "id": "20a1a1a1-0004-0004-0004-000000000004",
+      "name": "Evaluate Match",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1280, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            { "id": "c1", "leftValue": "={{ $json.has_match }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true" } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "20a1a1a1-0005-0005-0005-000000000005",
+      "name": "Match Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-1040, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Clone matched template's workflow JSON, personalize with client name\nconst data = $json;\nconst template = data.best_match.workflow_json;\n\nconst personalized = JSON.parse(JSON.stringify(template));\npersonalized.name = `${data.client_name} - ${data.best_match.template_name}`;\n\nreturn { json: { ...data, personalized_workflow: personalized } };"
+      },
+      "id": "20a1a1a1-0006-0006-0006-000000000006",
+      "name": "Clone + Personalize Template",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-800, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.N8N_HOST }}/api/v1/workflows",
+        "method": "POST",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.personalized_workflow }}",
+        "options": {}
+      },
+      "id": "20a1a1a1-0007-0007-0007-000000000007",
+      "name": "Deploy via n8n API (Matched)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-560, 200],
+      "credentials": {
+        "httpHeaderAuth": { "id": "REPLACE_WITH_YOUR_N8N_API_KEY_CREDENTIAL", "name": "n8n API Key" }
+      },
+      "notes": "Credential setup: Header Auth banao, Name='X-N8N-API-KEY', Value=apni n8n API key (Settings > API se milegi). N8N_HOST environment variable mein apna n8n server URL daalo."
+    },
+    {
+      "parameters": {
+        "operation": "sendEmail",
+        "options": {},
+        "toEmail": "YOUR_OWNER_EMAIL@example.com",
+        "subject": "=✅ Auto-matched & Deployed: {{ $json.client_name }}",
+        "message": "=New client request auto-matched an existing template ({{ $('Evaluate Match').item.json.best_match.template_name }}, {{ Math.round($('Evaluate Match').item.json.best_match.similarity * 100) }}% match) and deployed automatically. No action needed."
+      },
+      "id": "20a1a1a1-0008-0008-0008-000000000008",
+      "name": "Notify: Auto-Deployed",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [-320, 200],
+      "credentials": {
+        "gmailOAuth2": { "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID", "name": "Gmail account" }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://YOUR-WRAPPER-SERVICE.up.railway.app/generate",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"requirement_text\": \"You are an expert n8n workflow architect. Given this client automation requirement, generate a complete, valid n8n workflow JSON (nodes + connections). Follow n8n's exact JSON schema: each node needs id, name, type, typeVersion, position, parameters. Use n8n-nodes-base.webhook for intake, n8n-nodes-base.httpRequest for AI calls, n8n-nodes-base.code for logic, n8n-nodes-base.googleSheets or n8n-nodes-base.postgres for data storage, n8n-nodes-base.gmail for email, n8n-nodes-base.respondToWebhook to reply. Return ONLY the JSON object, no prose, no markdown fences. Client requirement: \" + $json.requirement_text } }}",
+        "options": {}
+      },
+      "id": "20a1a1a1-0009-0009-0009-000000000009",
+      "name": "Coding Agent: Generate New Workflow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-800, 420],
+      "notes": "Yeh ab hamare apne agent_wrapper_server.py (Gemini CLI wrapper, Railway par deployed) ko call karta hai. URL ko apni actual wrapper service ke Railway domain se replace karo. Koi OpenAI credential ki zaroorat nahi ab is node mein."
+    },
+    {
+      "parameters": {
+        "jsCode": "let generatedJson;\nlet isValid = true;\nlet errorMsg = '';\n\ntry {\n  // Hamara agent_wrapper_server.py { \"output\": \"...\" } shape return karta hai\n  // (agar seedha OpenAI API use kar rahe ho to $json.choices[0].message.content use karo)\n  const raw = $json.output;\n  const cleaned = raw.replace(/```json|```/g, '').trim();\n  generatedJson = JSON.parse(cleaned);\n  if (!generatedJson.nodes || !generatedJson.connections) {\n    isValid = false;\n    errorMsg = 'Missing nodes or connections';\n  }\n} catch (e) {\n  isValid = false;\n  errorMsg = e.message;\n  generatedJson = null;\n}\n\nreturn {\n  json: {\n    ...($('Evaluate Match').item.json),\n    generated_workflow: generatedJson,\n    is_valid_json: isValid,\n    validation_error: errorMsg\n  }\n};"
+      },
+      "id": "20a1a1a1-0010-0010-0010-000000000010",
+      "name": "Validate Generated JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-560, 420]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "tableId": "automation_requests",
+        "columns": "client_name,client_email,client_phone,requirement_text,status,generated_workflow_json",
+        "options": {}
+      },
+      "id": "20a1a1a1-0011-0011-0011-000000000011",
+      "name": "Save to Review Queue (Supabase)",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [-320, 420],
+      "credentials": {
+        "supabaseApi": { "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID", "name": "Supabase account" }
+      },
+      "notes": "status = 'needs_building' agar JSON invalid tha, ya 'in_review' agar valid JSON ban gaya lekin abhi tumhare approval ka wait hai. Yeh MVP mein HAMESHA human review se guzarta hai — pura autonomous deploy risky hai abhi."
+    },
+    {
+      "parameters": {
+        "operation": "sendEmail",
+        "options": {},
+        "toEmail": "YOUR_OWNER_EMAIL@example.com",
+        "subject": "=🔔 New Custom Automation Needed: {{ $('Website: New Automation Request').item.json.body.client_name }}",
+        "message": "=Koi existing template match nahi hui is request se.\\n\\nClient: {{ $('Website: New Automation Request').item.json.body.client_name }}\\nEmail: {{ $('Website: New Automation Request').item.json.body.client_email }}\\nRequirement: {{ $('Website: New Automation Request').item.json.body.requirement_text }}\\n\\nAI ne ek draft workflow generate kiya hai (valid: {{ $json.is_valid_json }}). Supabase 'automation_requests' table mein jaake review karo aur approve/reject karo."
+      },
+      "id": "20a1a1a1-0012-0012-0012-000000000012",
+      "name": "Notify Owner: Needs Review",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [-80, 420],
+      "credentials": {
+        "gmailOAuth2": { "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID", "name": "Gmail account" }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"processing\", \"message\": \"Your automation request has been received. Our team will confirm shortly.\" } }}",
+        "options": {}
+      },
+      "id": "20a1a1a1-0013-0013-0013-000000000013",
+      "name": "Respond to Client",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [160, 300]
+    }
+  ],
+  "connections": {
+    "Website: New Automation Request": { "main": [[{ "node": "Generate Embedding", "type": "main", "index": 0 }]] },
+    "Generate Embedding": { "main": [[{ "node": "Search for Matching Template", "type": "main", "index": 0 }]] },
+    "Search for Matching Template": { "main": [[{ "node": "Evaluate Match", "type": "main", "index": 0 }]] },
+    "Evaluate Match": { "main": [[{ "node": "Match Found?", "type": "main", "index": 0 }]] },
+    "Match Found?": {
+      "main": [
+        [{ "node": "Clone + Personalize Template", "type": "main", "index": 0 }],
+        [{ "node": "Coding Agent: Generate New Workflow", "type": "main", "index": 0 }]
+      ]
+    },
+    "Clone + Personalize Template": { "main": [[{ "node": "Deploy via n8n API (Matched)", "type": "main", "index": 0 }]] },
+    "Deploy via n8n API (Matched)": { "main": [[{ "node": "Notify: Auto-Deployed", "type": "main", "index": 0 }]] },
+    "Notify: Auto-Deployed": { "main": [[{ "node": "Respond to Client", "type": "main", "index": 0 }]] },
+    "Coding Agent: Generate New Workflow": { "main": [[{ "node": "Validate Generated JSON", "type": "main", "index": 0 }]] },
+    "Validate Generated JSON": { "main": [[{ "node": "Save to Review Queue (Supabase)", "type": "main", "index": 0 }]] },
+    "Save to Review Queue (Supabase)": { "main": [[{ "node": "Notify Owner: Needs Review", "type": "main", "index": 0 }]] },
+    "Notify Owner: Needs Review": { "main": [[{ "node": "Respond to Client", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "meta": { "description": "Workflow 20: The Automation Factory core. Receives a client's plain-language automation request from the website, checks it against existing templates via vector similarity, auto-deploys if a strong match exists, otherwise generates a new draft via AI (or your own coding agent), saves it for human review, and emails you either way." }
+}

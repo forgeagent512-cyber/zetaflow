@@ -1,0 +1,137 @@
+{
+  "name": "Workflow 21 - Approve & Save New Template",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "approve-template",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "21a1a1a1-0001-0001-0001-000000000001",
+      "name": "Owner Approves Request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-1200, 300],
+      "webhookId": "approve-template",
+      "notes": "Tum Supabase 'automation_requests' table dekh kar review karte ho, request approve karne ke liye is webhook ko call karo (ya ek chhota internal button/form bana sakte ho). Body: { request_id, industry, use_case, final_workflow_json }"
+    },
+    {
+      "parameters": {
+        "url": "https://api.openai.com/v1/embeddings",
+        "method": "POST",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"model\": \"text-embedding-3-small\", \"input\": $json.body.requirement_text || $json.body.use_case } }}",
+        "options": {}
+      },
+      "id": "21a1a1a1-0002-0002-0002-000000000002",
+      "name": "Generate Template Embedding",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-960, 300],
+      "credentials": {
+        "openAiApi": { "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID", "name": "OpenAI account" }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.N8N_HOST }}/api/v1/workflows",
+        "method": "POST",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $('Owner Approves Request').item.json.body.final_workflow_json }}",
+        "options": {}
+      },
+      "id": "21a1a1a1-0003-0003-0003-000000000003",
+      "name": "Deploy Approved Workflow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-720, 300],
+      "credentials": {
+        "httpHeaderAuth": { "id": "REPLACE_WITH_YOUR_N8N_API_KEY_CREDENTIAL", "name": "n8n API Key" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "tableId": "automation_templates",
+        "columns": "template_name,industry,use_case,description,workflow_json,embedding",
+        "options": {}
+      },
+      "id": "21a1a1a1-0004-0004-0004-000000000004",
+      "name": "Save as New Template (Supabase)",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [-480, 300],
+      "credentials": {
+        "supabaseApi": { "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID", "name": "Supabase account" }
+      },
+      "notes": "Ab yeh naya automation future clients ke liye bhi automatically match ho sakega — factory 'seekhti' rehti hai har naye approved automation se."
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "automation_requests",
+        "filters": {
+          "conditions": [{ "keyName": "id", "condition": "eq", "keyValue": "={{ $('Owner Approves Request').item.json.body.request_id }}" }]
+        },
+        "fieldsUi": {
+          "fieldValues": [{ "fieldId": "status", "fieldValue": "delivered" }]
+        }
+      },
+      "id": "21a1a1a1-0005-0005-0005-000000000005",
+      "name": "Mark Request as Delivered",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [-240, 300],
+      "credentials": {
+        "supabaseApi": { "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID", "name": "Supabase account" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendEmail",
+        "options": {},
+        "toEmail": "={{ $('Owner Approves Request').item.json.body.client_email }}",
+        "subject": "Your AI Automation is Ready! 🎉",
+        "message": "=Hi {{ $('Owner Approves Request').item.json.body.client_name }},\\n\\nYour custom AI automation has been built and deployed. Our team will reach out shortly with access details.\\n\\nThank you for choosing us!"
+      },
+      "id": "21a1a1a1-0006-0006-0006-000000000006",
+      "name": "Notify Client: Ready",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [0, 300],
+      "credentials": {
+        "gmailOAuth2": { "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID", "name": "Gmail account" }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"approved_and_saved\" } }}",
+        "options": {}
+      },
+      "id": "21a1a1a1-0007-0007-0007-000000000007",
+      "name": "Confirm",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [240, 300]
+    }
+  ],
+  "connections": {
+    "Owner Approves Request": { "main": [[{ "node": "Generate Template Embedding", "type": "main", "index": 0 }]] },
+    "Generate Template Embedding": { "main": [[{ "node": "Deploy Approved Workflow", "type": "main", "index": 0 }]] },
+    "Deploy Approved Workflow": { "main": [[{ "node": "Save as New Template (Supabase)", "type": "main", "index": 0 }]] },
+    "Save as New Template (Supabase)": { "main": [[{ "node": "Mark Request as Delivered", "type": "main", "index": 0 }]] },
+    "Mark Request as Delivered": { "main": [[{ "node": "Notify Client: Ready", "type": "main", "index": 0 }]] },
+    "Notify Client: Ready": { "main": [[{ "node": "Confirm", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "meta": { "description": "Workflow 21: Runs when YOU approve a newly-built automation. Deploys it live, saves it into the template library (so the factory gets smarter over time), notifies the client it's ready, and marks the request as delivered." }
+}

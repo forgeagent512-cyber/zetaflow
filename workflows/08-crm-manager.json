@@ -1,0 +1,101 @@
+{
+  "name": "Workflow 08 - CRM Manager",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            { "name": "operation" },
+            { "name": "session_id" },
+            { "name": "update_fields", "type": "object" }
+          ]
+        }
+      },
+      "id": "8a1a1a1a-0001-0001-0001-000000000001",
+      "name": "Input: CRM Operation",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [-1000, 300],
+      "notes": "operation = 'get' | 'update' | 'search'. Yeh workflow poore system ki single source of truth hai CRM read/write ke liye — koi bhi doosra workflow seedha Google Sheet ko touch nahi karta, sab isi se guzarte hain."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            { "id": "c1", "leftValue": "={{ $json.operation }}", "rightValue": "get", "operator": { "type": "string", "operation": "equals" } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8a1a1a1a-0002-0002-0002-000000000002",
+      "name": "Is Get Operation?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-760, 300]
+    },
+    {
+      "parameters": {
+        "operation": "lookup",
+        "documentId": { "__rl": true, "value": "104iVuCuI9jdMyLj8j7ytZkoC8NTE6gthVgJOmOKW9_8", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Leads", "mode": "name" },
+        "lookupColumn": "session_id",
+        "lookupValue": "={{ $json.session_id }}",
+        "options": { "returnAllMatches": false }
+      },
+      "id": "8a1a1a1a-0003-0003-0003-000000000003",
+      "name": "Get Lead Record",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [-520, 200],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID", "name": "Google Sheets account" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "__rl": true, "value": "104iVuCuI9jdMyLj8j7ytZkoC8NTE6gthVgJOmOKW9_8", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Leads", "mode": "name" },
+        "columns": {
+          "mappingMode": "autoMapInputData"
+        },
+        "matchingColumns": ["session_id"],
+        "options": {}
+      },
+      "id": "8a1a1a1a-0004-0004-0004-000000000004",
+      "name": "Update Lead Record",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [-520, 420],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID", "name": "Google Sheets account" }
+      },
+      "notes": "update_fields object ke saare keys session_id ke saath merge hoke sheet mein update ho jayenge (autoMapInputData use kar raha hai)."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge session_id + update_fields into a flat object for the Sheets node above\nconst input = $('Input: CRM Operation').item.json;\nreturn { json: { session_id: input.session_id, ...(input.update_fields || {}) } };"
+      },
+      "id": "8a1a1a1a-0005-0005-0005-000000000005",
+      "name": "Flatten Update Fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-760, 420]
+    }
+  ],
+  "connections": {
+    "Input: CRM Operation": { "main": [[{ "node": "Is Get Operation?", "type": "main", "index": 0 }]] },
+    "Is Get Operation?": {
+      "main": [
+        [{ "node": "Get Lead Record", "type": "main", "index": 0 }],
+        [{ "node": "Flatten Update Fields", "type": "main", "index": 0 }]
+      ]
+    },
+    "Flatten Update Fields": { "main": [[{ "node": "Update Lead Record", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "meta": { "description": "Workflow 08: Centralized CRM read/write service. All other workflows go through this instead of directly touching the Google Sheet, so lead data logic lives in one place." }
+}

@@ -1,0 +1,118 @@
+{
+  "name": "Workflow 09 - Customer Support",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "customer-support",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "9b1a1a1a-0001-0001-0001-000000000001",
+      "name": "Support Message Intake",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-1200, 300],
+      "webhookId": "customer-support",
+      "notes": "Post-sale customers (jinka deal already close ho chuka hai) is webhook par message bhejte hain — separate se isliye rakha hai taake sales AI (Workflow 01) ka context confuse na ho."
+    },
+    {
+      "parameters": {
+        "operation": "lookup",
+        "documentId": { "__rl": true, "value": "104iVuCuI9jdMyLj8j7ytZkoC8NTE6gthVgJOmOKW9_8", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Leads", "mode": "name" },
+        "lookupColumn": "session_id",
+        "lookupValue": "={{ $json.body.session_id }}",
+        "options": { "returnAllMatches": false }
+      },
+      "id": "9b1a1a1a-0002-0002-0002-000000000002",
+      "name": "Get Customer Deal History",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [-960, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID", "name": "Google Sheets account" }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.openai.com/v1/chat/completions",
+        "method": "POST",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"model\": \"gpt-4o-mini\", \"temperature\": 0.3, \"messages\": [ { \"role\": \"system\", \"content\": \"You are a post-sale customer support assistant for a Dubai real estate agency. The customer already has a closed deal or is in negotiation. Answer general questions about process/timelines/next steps helpfully. For anything specific to their contract, payment schedule, or legal documents, say their agent will confirm directly and offer to notify the agent. Never make promises about legal or financial matters.\" }, { \"role\": \"user\", \"content\": $json.body.message } ] } }}",
+        "options": {}
+      },
+      "id": "9b1a1a1a-0003-0003-0003-000000000003",
+      "name": "AI Support Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-720, 300],
+      "credentials": {
+        "openAiApi": { "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID", "name": "OpenAI account" }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            { "id": "c1", "leftValue": "={{ $json.choices[0].message.content.toLowerCase() }}", "rightValue": "agent", "operator": { "type": "string", "operation": "contains" } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "9b1a1a1a-0004-0004-0004-000000000004",
+      "name": "Needs Human Handoff?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-480, 300]
+    },
+    {
+      "parameters": {
+        "operation": "sendEmail",
+        "options": {},
+        "toEmail": "YOUR_AGENT_EMAIL@example.com",
+        "subject": "=Post-sale support query needs your attention",
+        "message": "=Customer session {{ $('Support Message Intake').item.json.body.session_id }} asked: {{ $('Support Message Intake').item.json.body.message }}"
+      },
+      "id": "9b1a1a1a-0005-0005-0005-000000000005",
+      "name": "Alert Agent for Handoff",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [-240, 200],
+      "credentials": {
+        "gmailOAuth2": { "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID", "name": "Gmail account" }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"reply\": $json.choices[0].message.content } }}",
+        "options": {}
+      },
+      "id": "9b1a1a1a-0006-0006-0006-000000000006",
+      "name": "Respond to Customer",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [0, 300]
+    }
+  ],
+  "connections": {
+    "Support Message Intake": { "main": [[{ "node": "Get Customer Deal History", "type": "main", "index": 0 }]] },
+    "Get Customer Deal History": { "main": [[{ "node": "AI Support Response", "type": "main", "index": 0 }]] },
+    "AI Support Response": { "main": [[{ "node": "Needs Human Handoff?", "type": "main", "index": 0 }]] },
+    "Needs Human Handoff?": {
+      "main": [
+        [{ "node": "Alert Agent for Handoff", "type": "main", "index": 0 }, { "node": "Respond to Customer", "type": "main", "index": 0 }],
+        [{ "node": "Respond to Customer", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "meta": { "description": "Workflow 09: Handles post-sale customer support queries separately from the sales qualification flow. Escalates to a human agent when the AI's response indicates it can't fully resolve the query." }
+}

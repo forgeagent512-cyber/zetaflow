@@ -1,0 +1,338 @@
+{
+  "name": "AI Real Estate Sales Employee - MVP (with Memory)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-intake",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "1a1a1a1a-0001-0001-0001-000000000001",
+      "name": "1. Lead Intake (Webhook)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-1900, 300],
+      "webhookId": "lead-intake",
+      "notes": "Website chat widget aur WhatsApp Business API dono is URL par POST karenge. Body: { source, name, phone, message, session_id }"
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            { "id": "n1", "name": "source", "type": "string", "value": "={{ $json.body.source || 'website' }}" },
+            { "id": "n2", "name": "session_id", "type": "string", "value": "={{ $json.body.session_id || $json.body.phone }}" },
+            { "id": "n3", "name": "customer_name", "type": "string", "value": "={{ $json.body.name || 'Unknown' }}" },
+            { "id": "n4", "name": "phone", "type": "string", "value": "={{ $json.body.phone || '' }}" },
+            { "id": "n5", "name": "message", "type": "string", "value": "={{ $json.body.message }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1a1a1a1a-0002-0002-0002-000000000002",
+      "name": "2. Normalize Lead Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-1660, 300]
+    },
+    {
+      "parameters": {
+        "operation": "lookup",
+        "documentId": { "__rl": true, "value": "104iVuCuI9jdMyLj8j7ytZkoC8NTE6gthVgJOmOKW9_8", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Conversations", "mode": "name" },
+        "lookupColumn": "session_id",
+        "lookupValue": "={{ $json.session_id }}",
+        "options": { "returnAllMatches": false }
+      },
+      "id": "1a1a1a1a-0012-0012-0012-000000000012",
+      "name": "2b. Fetch Conversation History",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [-1420, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID", "name": "Google Sheets account" }
+      },
+      "notes": "Ek naya sheet tab banao naam 'Conversations' with columns: session_id, history_json, updated_at. Agar session_id nahi milta to yeh node empty result dega — aage wala Code node isko handle karta hai (naya conversation start ho jayega)."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Naya customer ho ya purana, dono cases handle karo\nconst leadData = $('2. Normalize Lead Data').item.json;\nlet history = [];\n\ntry {\n  const historyRow = $input.first().json;\n  if (historyRow && historyRow.history_json) {\n    history = JSON.parse(historyRow.history_json);\n  }\n} catch (e) {\n  history = [];\n}\n\nconst systemPrompt = {\n  role: 'system',\n  content: \"You are a professional Dubai real estate sales consultant AI. Continue a natural qualification conversation with the customer. Ask ONE question at a time, in the language the customer is using (English, Arabic, Urdu, or Hindi). You must collect: 1) intent (buy/rent/invest), 2) preferred area (e.g. Dubai Marina, Downtown, Business Bay, Palm Jumeirah), 3) property type (apartment/villa/townhouse), 4) budget (AED), 5) timeline (30 days / 3 months / just exploring), 6) payment method (cash/mortgage). Be warm, concise, and helpful. Never invent property listings. Remember what the customer already told you earlier in this conversation and do not repeat questions they already answered. When you have enough info, say a short closing line telling the customer their consultant will follow up shortly.\"\n};\n\nconst newUserMessage = { role: 'user', content: leadData.message };\nconst fullMessages = [systemPrompt, ...history, newUserMessage];\n\nreturn {\n  json: {\n    ...leadData,\n    prior_history: history,\n    messages: fullMessages\n  }\n};"
+      },
+      "id": "1a1a1a1a-0013-0013-0013-000000000013",
+      "name": "2c. Build Message Array (with Memory)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1180, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.openai.com/v1/chat/completions",
+        "method": "POST",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"model\": \"gpt-4o-mini\", \"temperature\": 0.4, \"messages\": $json.messages } }}",
+        "options": {}
+      },
+      "id": "1a1a1a1a-0003-0003-0003-000000000003",
+      "name": "3. AI Conversation + Qualification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-940, 300],
+      "credentials": {
+        "openAiApi": { "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID", "name": "OpenAI account" }
+      },
+      "notes": "HTTP Request node directly OpenAI API ko call karta hai taake poora messages array (memory ke sath) bhej sakein — n8n ka default OpenAI node isko easily nahi karta."
+    },
+    {
+      "parameters": {
+        "jsCode": "const aiReply = $json.choices[0].message.content;\nconst priorHistory = $('2c. Build Message Array (with Memory)').item.json.prior_history;\nconst leadData = $('2c. Build Message Array (with Memory)').item.json;\n\nconst updatedHistory = [\n  ...priorHistory,\n  { role: 'user', content: leadData.message },\n  { role: 'assistant', content: aiReply }\n];\n\n// Keep only last 20 turns to avoid unlimited growth\nconst trimmedHistory = updatedHistory.slice(-20);\n\nreturn {\n  json: {\n    session_id: leadData.session_id,\n    history_json: JSON.stringify(trimmedHistory),\n    updated_at: new Date().toISOString(),\n    ai_reply_text: aiReply\n  }\n};"
+      },
+      "id": "1a1a1a1a-0014-0014-0014-000000000014",
+      "name": "3b. Prepare Updated History",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-700, 420]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "__rl": true, "value": "104iVuCuI9jdMyLj8j7ytZkoC8NTE6gthVgJOmOKW9_8", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Conversations", "mode": "name" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "session_id": "={{ $json.session_id }}",
+            "history_json": "={{ $json.history_json }}",
+            "updated_at": "={{ $json.updated_at }}"
+          }
+        },
+        "matchingColumns": ["session_id"],
+        "options": {}
+      },
+      "id": "1a1a1a1a-0015-0015-0015-000000000015",
+      "name": "3c. Save Conversation History",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [-460, 420],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID", "name": "Google Sheets account" }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.openai.com/v1/chat/completions",
+        "method": "POST",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"model\": \"gpt-4o-mini\", \"temperature\": 0, \"messages\": [ { \"role\": \"system\", \"content\": \"You extract structured lead data from a real estate sales conversation. Return STRICT JSON ONLY, no prose, no markdown fences. Schema: {\\\"intent\\\":\\\"buy|rent|invest|unknown\\\",\\\"area\\\":\\\"string|unknown\\\",\\\"property_type\\\":\\\"apartment|villa|townhouse|unknown\\\",\\\"budget_aed\\\":number|0,\\\"timeline\\\":\\\"immediate|3_months|exploring|unknown\\\",\\\"payment_method\\\":\\\"cash|mortgage|unknown\\\",\\\"ready_to_qualify\\\":true|false}. Set ready_to_qualify=true only if at least intent, area, and budget_aed are known.\" }, { \"role\": \"user\", \"content\": JSON.stringify($('2c. Build Message Array (with Memory)').item.json.messages) } ] } }}",
+        "options": {}
+      },
+      "id": "1a1a1a1a-0004-0004-0004-000000000004",
+      "name": "4. Extract Structured Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-460, 180],
+      "credentials": {
+        "openAiApi": { "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID", "name": "OpenAI account" }
+      },
+      "notes": "HTTP Request node use kiya (openAi wrapper node ki jagah) taake purane n8n versions mein bhi kaam kare."
+    },
+    {
+      "parameters": {
+        "jsCode": "let data;\ntry {\n  const raw = $input.first().json.choices[0].message.content;\n  const cleaned = raw.replace(/```json|```/g, '').trim();\n  data = JSON.parse(cleaned);\n} catch (e) {\n  data = { intent: 'unknown', area: 'unknown', property_type: 'unknown', budget_aed: 0, timeline: 'unknown', payment_method: 'unknown', ready_to_qualify: false };\n}\n\nlet score = 0;\nif (data.budget_aed >= 5000000) score += 30;\nelse if (data.budget_aed >= 2000000) score += 22;\nelse if (data.budget_aed >= 1000000) score += 15;\nelse if (data.budget_aed > 0) score += 8;\n\nif (data.timeline === 'immediate') score += 30;\nelse if (data.timeline === '3_months') score += 15;\nelse if (data.timeline === 'exploring') score += 5;\n\nif (data.payment_method === 'cash') score += 20;\nelse if (data.payment_method === 'mortgage') score += 12;\n\nif (data.intent === 'buy' || data.intent === 'invest') score += 15;\nelse if (data.intent === 'rent') score += 8;\n\nif (data.area !== 'unknown') score += 5;\n\nscore = Math.min(score, 100);\n\nlet tier = 'COLD';\nif (score >= 70) tier = 'HOT';\nelse if (score >= 40) tier = 'WARM';\n\nreturn {\n  json: {\n    ...$('2. Normalize Lead Data').item.json,\n    ...data,\n    lead_score: score,\n    lead_tier: tier,\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "1a1a1a1a-0005-0005-0005-000000000005",
+      "name": "5. Calculate Lead Score",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-220, 180]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "__rl": true, "value": "104iVuCuI9jdMyLj8j7ytZkoC8NTE6gthVgJOmOKW9_8", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Leads", "mode": "name" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "session_id": "={{ $json.session_id }}",
+            "customer_name": "={{ $json.customer_name }}",
+            "phone": "={{ $json.phone }}",
+            "source": "={{ $json.source }}",
+            "intent": "={{ $json.intent }}",
+            "area": "={{ $json.area }}",
+            "property_type": "={{ $json.property_type }}",
+            "budget_aed": "={{ $json.budget_aed }}",
+            "timeline": "={{ $json.timeline }}",
+            "payment_method": "={{ $json.payment_method }}",
+            "lead_score": "={{ $json.lead_score }}",
+            "lead_tier": "={{ $json.lead_tier }}",
+            "timestamp": "={{ $json.timestamp }}",
+            "status": "New Lead"
+          }
+        },
+        "matchingColumns": ["session_id"],
+        "options": {}
+      },
+      "id": "1a1a1a1a-0006-0006-0006-000000000006",
+      "name": "6. Save to CRM (Google Sheet)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [20, 180],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID", "name": "Google Sheets account" }
+      },
+      "notes": "Sheet 'Leads' mein yeh columns headers ke roop mein pehle se bana lo: session_id, customer_name, phone, source, intent, area, property_type, budget_aed, timeline, payment_method, lead_score, lead_tier, timestamp, status"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            { "id": "c1", "leftValue": "={{ $json.lead_tier }}", "rightValue": "HOT", "operator": { "type": "string", "operation": "equals" } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "1a1a1a1a-0007-0007-0007-000000000007",
+      "name": "7. Is Hot Lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [260, 180]
+    },
+    {
+      "parameters": {
+        "url": "https://graph.facebook.com/v20.0/YOUR_PHONE_NUMBER_ID/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"YOUR_AGENT_WHATSAPP_NUMBER\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"🔥 HOT LEAD\\nName: \" + $json.customer_name + \"\\nPhone: \" + $json.phone + \"\\nIntent: \" + $json.intent + \"\\nArea: \" + $json.area + \"\\nBudget: AED \" + $json.budget_aed + \"\\nTimeline: \" + $json.timeline + \"\\nPayment: \" + $json.payment_method + \"\\nScore: \" + $json.lead_score + \"/100\\nAction: Call Immediately\"\n  }\n} }}",
+        "options": {}
+      },
+      "id": "1a1a1a1a-0008-0008-0008-000000000008",
+      "name": "8a. WhatsApp Alert to Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 60],
+      "notes": "MVP mein agar WhatsApp Business API setup nahi hua to iski jagah 'Send Email' node use karo (Gmail node), zyada tez shuru ho jayega."
+    },
+    {
+      "parameters": {
+        "operation": "sendEmail",
+        "options": {},
+        "toEmail": "YOUR_AGENT_EMAIL@example.com",
+        "subject": "=🔥 HOT LEAD: {{ $json.customer_name }} - Score {{ $json.lead_score }}/100",
+        "message": "=Name: {{ $json.customer_name }}\\nPhone: {{ $json.phone }}\\nIntent: {{ $json.intent }}\\nArea: {{ $json.area }}\\nProperty Type: {{ $json.property_type }}\\nBudget: AED {{ $json.budget_aed }}\\nTimeline: {{ $json.timeline }}\\nPayment: {{ $json.payment_method }}\\nLead Score: {{ $json.lead_score }}/100\\n\\nAction: Call this lead immediately."
+      },
+      "id": "1a1a1a1a-0009-0009-0009-000000000009",
+      "name": "8b. Email Alert to Agent (Fallback)",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [500, 280],
+      "credentials": {
+        "gmailOAuth2": { "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID", "name": "Gmail account" }
+      },
+      "notes": "Simplest option to start with — use this instead of node 8a if WhatsApp API isn't set up yet."
+    },
+    {
+      "parameters": {
+        "url": "https://api.openai.com/v1/chat/completions",
+        "method": "POST",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"model\": \"gpt-4o-mini\", \"temperature\": 0.5, \"messages\": [ { \"role\": \"system\", \"content\": \"Write a short, warm WhatsApp message (2-3 sentences, in the customer's language) confirming that a property consultant will contact them shortly about their request. Do not invent specific property names or prices.\" }, { \"role\": \"user\", \"content\": \"Customer wants: \" + $json.property_type + \" in \" + $json.area + \", budget AED \" + $json.budget_aed + \", intent \" + $json.intent } ] } }}",
+        "options": {}
+      },
+      "id": "1a1a1a1a-0010-0010-0010-000000000010",
+      "name": "9. Generate Customer Confirmation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [740, 180],
+      "credentials": {
+        "openAiApi": { "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID", "name": "OpenAI account" }
+      },
+      "notes": "HTTP Request node use kiya (openAi wrapper node ki jagah) taake purane n8n versions mein bhi kaam kare."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"reply\": $json.choices[0].message.content, \"lead_score\": $('5. Calculate Lead Score').item.json.lead_score, \"lead_tier\": $('5. Calculate Lead Score').item.json.lead_tier } }}",
+        "options": {}
+      },
+      "id": "1a1a1a1a-0011-0011-0011-000000000011",
+      "name": "10. Respond to Website/WhatsApp",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [980, 180]
+    }
+  ],
+  "connections": {
+    "1. Lead Intake (Webhook)": {
+      "main": [[{ "node": "2. Normalize Lead Data", "type": "main", "index": 0 }]]
+    },
+    "2. Normalize Lead Data": {
+      "main": [[{ "node": "2b. Fetch Conversation History", "type": "main", "index": 0 }]]
+    },
+    "2b. Fetch Conversation History": {
+      "main": [[{ "node": "2c. Build Message Array (with Memory)", "type": "main", "index": 0 }]]
+    },
+    "2c. Build Message Array (with Memory)": {
+      "main": [[{ "node": "3. AI Conversation + Qualification", "type": "main", "index": 0 }]]
+    },
+    "3. AI Conversation + Qualification": {
+      "main": [
+        [
+          { "node": "3b. Prepare Updated History", "type": "main", "index": 0 },
+          { "node": "4. Extract Structured Data", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "3b. Prepare Updated History": {
+      "main": [[{ "node": "3c. Save Conversation History", "type": "main", "index": 0 }]]
+    },
+    "4. Extract Structured Data": {
+      "main": [[{ "node": "5. Calculate Lead Score", "type": "main", "index": 0 }]]
+    },
+    "5. Calculate Lead Score": {
+      "main": [[{ "node": "6. Save to CRM (Google Sheet)", "type": "main", "index": 0 }]]
+    },
+    "6. Save to CRM (Google Sheet)": {
+      "main": [[{ "node": "7. Is Hot Lead?", "type": "main", "index": 0 }]]
+    },
+    "7. Is Hot Lead?": {
+      "main": [
+        [
+          { "node": "8a. WhatsApp Alert to Agent", "type": "main", "index": 0 },
+          { "node": "8b. Email Alert to Agent (Fallback)", "type": "main", "index": 0 }
+        ],
+        [{ "node": "9. Generate Customer Confirmation", "type": "main", "index": 0 }]
+      ]
+    },
+    "8a. WhatsApp Alert to Agent": {
+      "main": [[{ "node": "9. Generate Customer Confirmation", "type": "main", "index": 0 }]]
+    },
+    "8b. Email Alert to Agent (Fallback)": {
+      "main": [[{ "node": "9. Generate Customer Confirmation", "type": "main", "index": 0 }]]
+    },
+    "9. Generate Customer Confirmation": {
+      "main": [[{ "node": "10. Respond to Website/WhatsApp", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "description": "MVP workflow WITH conversation memory: Website/WhatsApp lead -> fetch prior conversation history -> AI conversation (context-aware) -> save updated history -> extract structured data -> lead scoring -> CRM save -> hot lead alert to agent -> customer confirmation."
+  }
+}

@@ -1,0 +1,182 @@
+{
+  "name": "Workflow 3 - Property Matching System",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            { "name": "session_id" },
+            { "name": "area" },
+            { "name": "property_type" },
+            { "name": "budget_aed", "type": "number" },
+            { "name": "intent" }
+          ]
+        }
+      },
+      "id": "3a1a1a1a-0001-0001-0001-000000000001",
+      "name": "Input: Customer Requirement",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [-1200, 300],
+      "notes": "Yeh workflow Workflow 1 (Lead Capture) se 'Execute Workflow' node ke zariye call hoga, jab customer ka area/budget/type pata chal jaye."
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "properties",
+        "returnAll": false,
+        "limit": 50,
+        "filters": {
+          "conditions": [
+            { "keyName": "area", "condition": "eq", "keyValue": "={{ $json.area }}" },
+            { "keyName": "property_type", "condition": "eq", "keyValue": "={{ $json.property_type }}" }
+          ]
+        }
+      },
+      "id": "3a1a1a1a-0002-0002-0002-000000000002",
+      "name": "Query Properties (Supabase)",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [-960, 300],
+      "credentials": {
+        "supabaseApi": { "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID", "name": "Supabase account" }
+      },
+      "notes": "Agar area/property_type exact match kum results de to niche wale Code node mein hum budget ke aas paas +/-25% bhi dhoondte hain fallback ke roop mein."
+    },
+    {
+      "parameters": {
+        "jsCode": "const trigger = $('Input: Customer Requirement').item.json;\nconst allMatches = $input.all().map(i => i.json);\n\nconst budget = Number(trigger.budget_aed) || 0;\nconst lowerBound = budget * 0.75;\nconst upperBound = budget * 1.25;\n\nlet scored = allMatches.map(p => {\n  const price = Number(p.price_aed);\n  const withinRange = price >= lowerBound && price <= upperBound;\n  const priceDiff = Math.abs(price - budget);\n  return { ...p, within_budget: withinRange, price_diff: priceDiff };\n});\n\nscored.sort((a, b) => {\n  if (a.within_budget !== b.within_budget) return a.within_budget ? -1 : 1;\n  return a.price_diff - b.price_diff;\n});\n\nconst top3 = scored.slice(0, 3);\n\nreturn {\n  json: {\n    session_id: trigger.session_id,\n    area: trigger.area,\n    property_type: trigger.property_type,\n    budget_aed: budget,\n    intent: trigger.intent,\n    match_count: top3.length,\n    matches: top3\n  }\n};"
+      },
+      "id": "3a1a1a1a-0003-0003-0003-000000000003",
+      "name": "Rank Top 3 Matches",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-720, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            { "id": "c1", "leftValue": "={{ $json.match_count }}", "rightValue": 0, "operator": { "type": "number", "operation": "gt" } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "3a1a1a1a-0004-0004-0004-000000000004",
+      "name": "Any Matches Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-480, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.openai.com/v1/chat/completions",
+        "method": "POST",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"model\": \"gpt-4o-mini\", \"temperature\": 0.4, \"messages\": [ { \"role\": \"system\", \"content\": \"You are a Dubai real estate consultant. Given a list of matched properties (JSON), write a short warm recommendation message (3-5 sentences) presenting these options to the customer. Mention project name, price, and bedrooms for each. Do not invent details not in the data. End by asking if they'd like to schedule a viewing.\" }, { \"role\": \"user\", \"content\": JSON.stringify($json.matches) } ] } }}",
+        "options": {}
+      },
+      "id": "3a1a1a1a-0005-0005-0005-000000000005",
+      "name": "Generate Recommendation Text",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-240, 200],
+      "credentials": {
+        "openAiApi": { "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID", "name": "OpenAI account" }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.openai.com/v1/chat/completions",
+        "method": "POST",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"model\": \"gpt-4o-mini\", \"temperature\": 0.4, \"messages\": [ { \"role\": \"system\", \"content\": \"You are a Dubai real estate consultant. No exact property matches were found for this customer's request. Write a short warm message (2-3 sentences) letting them know their consultant will personally search for suitable options and follow up soon. Do not invent property listings.\" }, { \"role\": \"user\", \"content\": \"=Customer wants: {{ $json.property_type }} in {{ $json.area }}, budget AED {{ $json.budget_aed }}\" } ] } }}",
+        "options": {}
+      },
+      "id": "3a1a1a1a-0006-0006-0006-000000000006",
+      "name": "Generate No-Match Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-240, 420],
+      "credentials": {
+        "openAiApi": { "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID", "name": "OpenAI account" }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            { "id": "o1", "name": "session_id", "type": "string", "value": "={{ $('Rank Top 3 Matches').item.json.session_id }}" },
+            { "id": "o2", "name": "matches", "type": "array", "value": "={{ $('Rank Top 3 Matches').item.json.matches }}" },
+            { "id": "o3", "name": "recommendation_text", "type": "string", "value": "={{ $json.choices[0].message.content }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3a1a1a1a-0007-0007-0007-000000000007",
+      "name": "Output: With Matches",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [0, 200]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            { "id": "o1", "name": "session_id", "type": "string", "value": "={{ $('Rank Top 3 Matches').item.json.session_id }}" },
+            { "id": "o2", "name": "matches", "type": "array", "value": "=[]" },
+            { "id": "o3", "name": "recommendation_text", "type": "string", "value": "={{ $json.choices[0].message.content }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3a1a1a1a-0008-0008-0008-000000000008",
+      "name": "Output: No Matches",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [0, 420]
+    }
+  ],
+  "connections": {
+    "Input: Customer Requirement": {
+      "main": [[{ "node": "Query Properties (Supabase)", "type": "main", "index": 0 }]]
+    },
+    "Query Properties (Supabase)": {
+      "main": [[{ "node": "Rank Top 3 Matches", "type": "main", "index": 0 }]]
+    },
+    "Rank Top 3 Matches": {
+      "main": [[{ "node": "Any Matches Found?", "type": "main", "index": 0 }]]
+    },
+    "Any Matches Found?": {
+      "main": [
+        [{ "node": "Generate Recommendation Text", "type": "main", "index": 0 }],
+        [{ "node": "Generate No-Match Message", "type": "main", "index": 0 }]
+      ]
+    },
+    "Generate Recommendation Text": {
+      "main": [[{ "node": "Output: With Matches", "type": "main", "index": 0 }]]
+    },
+    "Generate No-Match Message": {
+      "main": [[{ "node": "Output: No Matches", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "description": "Workflow 3: Property Matching. Called as a sub-workflow from Workflow 1 (Lead Capture) once area/budget/property_type are known. Queries Supabase 'properties' table, ranks top 3 matches by budget closeness, and generates a natural-language recommendation via AI."
+  }
+}

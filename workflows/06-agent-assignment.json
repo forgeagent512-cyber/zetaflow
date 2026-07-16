@@ -1,0 +1,98 @@
+{
+  "name": "Workflow 9 - Smart Agent Assignment System",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            { "name": "session_id" },
+            { "name": "area" },
+            { "name": "language", "type": "string" },
+            { "name": "lead_tier" }
+          ]
+        }
+      },
+      "id": "9a1a1a1a-0001-0001-0001-000000000001",
+      "name": "Input: Lead Details",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [-1000, 300],
+      "notes": "Workflow 1 se call hoga jab lead HOT/WARM ho jaye, taake sahi agent ko assign kiya ja sake."
+    },
+    {
+      "parameters": {
+        "documentId": { "__rl": true, "value": "104iVuCuI9jdMyLj8j7ytZkoC8NTE6gthVgJOmOKW9_8", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Agents", "mode": "name" }
+      },
+      "id": "9a1a1a1a-0002-0002-0002-000000000002",
+      "name": "Read Agents List",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [-760, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID", "name": "Google Sheets account" }
+      },
+      "notes": "Naya sheet tab 'Agents' banao columns: agent_name, agent_phone, agent_email, specialty_area, languages, active (yes/no)"
+    },
+    {
+      "parameters": {
+        "jsCode": "const trigger = $('Input: Lead Details').item.json;\nconst agents = $input.all().map(i => i.json).filter(a => a.active === 'yes' || a.active === true);\n\nlet scored = agents.map(a => {\n  let score = 0;\n  const agentAreas = (a.specialty_area || '').toLowerCase();\n  const agentLangs = (a.languages || '').toLowerCase();\n\n  if (agentAreas.includes((trigger.area || '').toLowerCase())) score += 50;\n  if (agentLangs.includes((trigger.language || 'english').toLowerCase())) score += 30;\n  if (trigger.lead_tier === 'HOT') score += 10; // priority weighting placeholder\n\n  return { ...a, match_score: score };\n});\n\nscored.sort((a, b) => b.match_score - a.match_score);\n\nconst assigned = scored[0] || { agent_name: 'Unassigned', agent_email: '', agent_phone: '' };\n\nreturn {\n  json: {\n    session_id: trigger.session_id,\n    assigned_agent_name: assigned.agent_name,\n    assigned_agent_email: assigned.agent_email,\n    assigned_agent_phone: assigned.agent_phone,\n    match_score: assigned.match_score || 0\n  }\n};"
+      },
+      "id": "9a1a1a1a-0003-0003-0003-000000000003",
+      "name": "Score & Pick Best Agent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-520, 300]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "__rl": true, "value": "104iVuCuI9jdMyLj8j7ytZkoC8NTE6gthVgJOmOKW9_8", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Leads", "mode": "name" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "session_id": "={{ $json.session_id }}",
+            "assigned_agent": "={{ $json.assigned_agent_name }}"
+          }
+        },
+        "matchingColumns": ["session_id"],
+        "options": {}
+      },
+      "id": "9a1a1a1a-0004-0004-0004-000000000004",
+      "name": "Save Assignment to CRM",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [-280, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID", "name": "Google Sheets account" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendEmail",
+        "options": {},
+        "toEmail": "={{ $json.assigned_agent_email }}",
+        "subject": "=New Lead Assigned to You: {{ $json.session_id }}",
+        "message": "=A new qualified lead has been assigned to you. Check your CRM for full details. Lead ID: {{ $json.session_id }}"
+      },
+      "id": "9a1a1a1a-0005-0005-0005-000000000005",
+      "name": "Notify Assigned Agent",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [-40, 300],
+      "credentials": {
+        "gmailOAuth2": { "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID", "name": "Gmail account" }
+      }
+    }
+  ],
+  "connections": {
+    "Input: Lead Details": { "main": [[{ "node": "Read Agents List", "type": "main", "index": 0 }]] },
+    "Read Agents List": { "main": [[{ "node": "Score & Pick Best Agent", "type": "main", "index": 0 }]] },
+    "Score & Pick Best Agent": { "main": [[{ "node": "Save Assignment to CRM", "type": "main", "index": 0 }]] },
+    "Save Assignment to CRM": { "main": [[{ "node": "Notify Assigned Agent", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "meta": { "description": "Workflow 9: Matches a qualified lead to the best available agent based on area specialty and language, saves the assignment, and notifies that agent." }
+}
