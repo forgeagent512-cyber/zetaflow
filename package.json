@@ -10,13 +10,15 @@
     "clean": "npm run clean --workspaces",
     "web": "npm run dev -w apps/web",
     "api": "npm run dev -w apps/api",
+    "type-check": "tsc -p tsconfig.json --noEmit",
     "backend:build": "tsc -p tsconfig.json",
     "backend:import-workflows": "tsx src/cli/import-workflows.ts",
     "backend:analyze-workflows": "tsx src/cli/analyze-workflows.ts",
     "backend:search-workflow": "tsx src/cli/search-workflow.ts",
     "backend:generate-workflow": "tsx src/cli/generate-workflow.ts",
     "backend:start-server": "node dist/api/server.js",
-    "backend:test": "node --import tsx --test src/**/*.test.ts"
+    "backend:test": "node --import tsx --test src/**/*.test.ts",
+    "test": "npm run backend:test"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.19",

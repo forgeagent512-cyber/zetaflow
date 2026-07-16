@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import Stripe from 'stripe';
 
 export interface PricingPlan {
@@ -34,21 +35,16 @@ export const PLANS: PricingPlan[] = [
 function getStripe(): Stripe | null {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) return null;
-  const instance = new Stripe(key);
-  return instance;
+  return new Stripe(key);
 }
 
 export class BillingService {
   async createCheckoutSession(organizationId: string, planId: string, successUrl: string, cancelUrl: string): Promise<{ url: string | null; sessionId: string }> {
     const stripe = getStripe();
+    const plan = PLANS.find((candidate) => candidate.id === planId);
 
-    if (!stripe) {
-      return { url: null, sessionId: `mock_${crypto.randomUUID()}` };
-    }
-
-    const plan = PLANS.find(p => p.id === planId);
-    if (!plan || plan.price === 0) {
-      return { url: null, sessionId: `free_${crypto.randomUUID()}` };
+    if (!stripe || !plan || plan.price === 0) {
+      return { url: null, sessionId: '' };
     }
 
     const session = await stripe.checkout.sessions.create({
@@ -65,19 +61,19 @@ export class BillingService {
 
   async handleWebhook(payload: Buffer, signature: string): Promise<{ received: boolean; event?: string }> {
     const stripe = getStripe();
-    if (!stripe) return { received: true, event: 'mock' };
+    if (!stripe || !process.env.STRIPE_WEBHOOK_SECRET) {
+      return { received: false, event: 'disabled' };
+    }
 
-    const event = stripe.webhooks.constructEvent(payload, signature, process.env.STRIPE_WEBHOOK_SECRET ?? '');
+    const event = stripe.webhooks.constructEvent(payload, signature, process.env.STRIPE_WEBHOOK_SECRET);
     return { received: true, event: event.type };
   }
 
   async getInvoices(organizationId: string): Promise<InvoiceRecord[]> {
-    return [
-      { id: 'inv_1', organizationId, amount: 4900, currency: 'USD', status: 'paid', description: 'Growth Plan - Monthly', createdAt: new Date().toISOString(), paidAt: new Date().toISOString() },
-    ];
+    return [];
   }
 
   async getActivePlan(organizationId: string): Promise<PricingPlan> {
-    return PLANS[1];
+    return PLANS.find((plan) => plan.id === 'starter') ?? PLANS[0];
   }
 }

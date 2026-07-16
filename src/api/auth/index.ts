@@ -2,6 +2,7 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { AuthService } from '../../services/auth/auth.service.js';
 import { authRateLimit } from '../../middleware/security.middleware.js';
+import { authenticate } from '../../middleware/auth.middleware.js';
 import { createClient } from '@supabase/supabase-js';
 
 const router = Router();
@@ -160,15 +161,14 @@ router.post('/logout', async (req: Request, res: Response) => {
   }
 });
 
-router.get('/me', async (req: Request, res: Response) => {
+router.get('/me', authenticate, async (req: Request, res: Response) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
+    const payload = req.user;
+    if (!payload) {
       res.status(401).json({ success: false, message: 'Unauthorized' });
       return;
     }
 
-    const payload = authService.verifyToken(authHeader.slice(7));
     const supabase = getSupabase();
     const { data: user } = await supabase.from('users').select('*, organizations(name, slug)').eq('id', payload.userId).maybeSingle();
 

@@ -12,12 +12,24 @@ function getSupabase() {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
+function canAccessOrganization(req: Request, organizationId: string | string[]): boolean {
+  const resolvedId = Array.isArray(organizationId) ? organizationId[0] : organizationId;
+  const userRole = req.user?.role;
+  return userRole === 'Super Admin' || req.user?.organizationId === resolvedId;
+}
+
 router.get('/', authenticate, async (req: Request, res: Response) => {
   try {
     const supabase = getSupabase();
     const { page = '1', limit = '20' } = req.query;
     const offset = (Number(page) - 1) * Number(limit);
-    const { data, error, count } = await supabase.from('organizations').select('*', { count: 'exact' }).order('created_at', { ascending: false }).range(offset, offset + Number(limit) - 1);
+
+    let query = supabase.from('organizations').select('*', { count: 'exact' }).order('created_at', { ascending: false });
+    if (req.user?.role !== 'Super Admin' && req.user?.organizationId) {
+      query = query.eq('id', req.user.organizationId);
+    }
+
+    const { data, error, count } = await query.range(offset, offset + Number(limit) - 1);
     if (error) throw new Error(error.message);
     res.json({ success: true, data: data ?? [], total: count ?? 0, page: Number(page), limit: Number(limit) });
   } catch (error) {
@@ -29,6 +41,11 @@ router.get('/:id', authenticate, async (req: Request, res: Response) => {
   try {
     const supabase = getSupabase();
     const { id } = req.params;
+    if (!canAccessOrganization(req, id)) {
+      res.status(403).json({ success: false, message: 'Organization access denied' });
+      return;
+    }
+
     const { data, error } = await supabase.from('organizations').select('*').eq('id', id).single();
     if (error) {
       res.status(404).json({ success: false, message: 'Organization not found' });
@@ -44,6 +61,11 @@ router.put('/:id', authenticate, async (req: Request, res: Response) => {
   try {
     const supabase = getSupabase();
     const { id } = req.params;
+    if (!canAccessOrganization(req, id)) {
+      res.status(403).json({ success: false, message: 'Organization access denied' });
+      return;
+    }
+
     const { name, slug, settings } = req.body;
     const updates: Record<string, any> = {};
     if (name !== undefined) updates.name = name;
@@ -65,6 +87,11 @@ router.delete('/:id', authenticate, async (req: Request, res: Response) => {
   try {
     const supabase = getSupabase();
     const { id } = req.params;
+    if (!canAccessOrganization(req, id)) {
+      res.status(403).json({ success: false, message: 'Organization access denied' });
+      return;
+    }
+
     const { error } = await supabase.from('organizations').delete().eq('id', id);
     if (error) {
       res.status(404).json({ success: false, message: 'Organization not found' });
@@ -80,6 +107,11 @@ router.get('/:id/users', authenticate, async (req: Request, res: Response) => {
   try {
     const supabase = getSupabase();
     const { id } = req.params;
+    if (!canAccessOrganization(req, id)) {
+      res.status(403).json({ success: false, message: 'Organization access denied' });
+      return;
+    }
+
     const { data, error } = await supabase.from('organization_users').select('*').eq('organization_id', id);
     if (error) throw new Error(error.message);
     res.json({ success: true, data: data ?? [] });
@@ -92,6 +124,11 @@ router.get('/:id/usage', authenticate, async (req: Request, res: Response) => {
   try {
     const supabase = getSupabase();
     const { id } = req.params;
+    if (!canAccessOrganization(req, id)) {
+      res.status(403).json({ success: false, message: 'Organization access denied' });
+      return;
+    }
+
     const { period = 'monthly' } = req.query;
     const { data, error } = await supabase.from('usage_metrics').select('*').eq('organization_id', id).eq('period', period).order('recorded_at', { ascending: false }).limit(30);
     if (error) throw new Error(error.message);
@@ -105,6 +142,11 @@ router.get('/:id/billing', authenticate, async (req: Request, res: Response) => 
   try {
     const supabase = getSupabase();
     const { id } = req.params;
+    if (!canAccessOrganization(req, id)) {
+      res.status(403).json({ success: false, message: 'Organization access denied' });
+      return;
+    }
+
     const { data, error } = await supabase.from('billing_info').select('*').eq('organization_id', id).single();
     if (error) {
       res.json({ success: true, data: null });

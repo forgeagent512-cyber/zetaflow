@@ -54,13 +54,12 @@ router.get('/:id', authenticate, async (req: Request, res: Response) => {
     const supabase = getSupabase();
     const orgId = req.organizationId!;
     const { id } = req.params;
-    const { data, error } = await supabase.from('credential_vault').select('*').eq('id', id).eq('organization_id', orgId).single();
+    const { data, error } = await supabase.from('credential_vault').select('id, name, type, created_at, updated_at').eq('id', id).eq('organization_id', orgId).single();
     if (error) {
       res.status(404).json({ success: false, message: 'Credential not found' });
       return;
     }
-    const decryptedValue = await encryptionService.decrypt(data.encrypted_value);
-    res.json({ success: true, data: { id: data.id, name: data.name, type: data.type, value: JSON.parse(decryptedValue), created_at: data.created_at, updated_at: data.updated_at } });
+    res.json({ success: true, data });
   } catch (error) {
     res.status(500).json({ success: false, message: error instanceof Error ? error.message : 'Failed to get credential' });
   }

@@ -50,18 +50,8 @@ router.post('/encrypt', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/decrypt', authenticate, async (req: Request, res: Response) => {
-  try {
-    const { value } = req.body;
-    if (!value) {
-      res.status(400).json({ success: false, message: 'Value is required' });
-      return;
-    }
-    const decrypted = await encryptionService.decrypt(value);
-    res.json({ success: true, data: { decrypted } });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error instanceof Error ? error.message : 'Decryption failed' });
-  }
+router.post('/decrypt', authenticate, async (_req: Request, res: Response) => {
+  res.status(403).json({ success: false, message: 'Secret decryption is not exposed to clients' });
 });
 
 export default router;
